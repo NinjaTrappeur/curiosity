@@ -206,6 +206,26 @@ Right (UsersVisualised [UserProfile {_userCreds = UserCreds {_userCredsId = User
 
 ```
 
+# Nix Cache
+
+You can re-use the curiosity binaries built by the CI through a custom Nix binary cache.
+
+On a NixOS system add the following snippet to your system configuration:
+
+```nix
+nix.settings = {
+  substituters = [ "https://s3.eu-central-003.backblazeb2.com/curiosity-store/" "https://cache.nixos.org/" ];
+  trusted-public-keys = [ "curiosity-store:W3LXUB+6DjtZkKV0gEfNXGtTjA+hMqjPUoK6mzzco+w=" "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" ];
+}
+```
+
+On a non-NixOS system, you can edit the `/etc/nix/nix.conf` file and set the `substituters` and `trusted-public-keys` configuration attributes to:
+
+```
+substituters = https://s3.eu-central-003.backblazeb2.com/curiosity-store/ https://cache.nixos.org/
+trusted-public-keys = curiosity-store:W3LXUB+6DjtZkKV0gEfNXGtTjA+hMqjPUoK6mzzco+w= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+```
+
 # Docker image
 
 A Docker image can be built to experiment with the `cty` program, and have
