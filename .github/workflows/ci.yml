@@ -37,16 +37,32 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.B2_APPKEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APPKEY }}
       run: |
+        # Setting up a temporary post-build-hook until we fully build
+        # the queued-post-build-hook daemon.
+        sudo bash -c 'echo "return 0" > /etc/nix/post-build-hook'
+        sudo chmod a+x /etc/nix/post-build-hook
         sudo mkdir -p /run/keys
         sudo bash -c "echo ${SIGNING_KEY} > /run/keys/nix-signing-key.private"
         sudo bash -c "echo ${AWS_ACCESS_KEY_ID} > /run/keys/AWS_ACCESS_KEY_ID"
         sudo bash -c "echo ${AWS_SECRET_ACCESS_KEY} > /run/keys/AWS_SECRET_ACCESS_KEY"
-        sudo cp .github/workflows/post-build-hook /etc/nix/post-build-hook
+        sudo cp "$(nix-build -A ci-tools.queue-to-post-build-hook-daemon)"/bin/queue-to-post-build-hook-daemon /etc/nix/post-build-hook
+        sudo chmod a+x /etc/nix/post-build-hook
+        sudo cp ci/post-build-hook /etc/nix/real-post-build-hook
+        sudo chmod a+x /etc/nix/real-post-build-hook
 
     - name: Build Curiosity
       run: |
-        nix-build -A toplevel --show-trace
-        system_path=$(nix-build -A toplevel)
+        PATH="$(nix-build -A ci-tools.queued-build-hook)"/bin:"$(nix-build -A ci-tools.systemfd)"/bin:$PATH
+        # Starting the queued-build-hook-daemon.
+        systemfd -s unix::/tmp/queued-build-hook.sock -- queued-build-hook daemon -hook /etc/nix/real-post-build-hook &
+        # Waiting for the build-hook daemon to be ready to receive connections.
+        until [ -S /tmp/queued-build-hook.sock ]
+        do
+          sleep 1
+        done
+        $(nix-build -A ci-tools.build-curiosity)/bin/build-curiosity
+        # Waiting for the build-hook daemon to upload all the pending paths.
+        queued-build-hook wait -socket /tmp/queued-build-hook.sock
         echo "SYSTEM_PATH=$system_path" > $GITHUB_OUTPUT
       id: build_curiosity
 

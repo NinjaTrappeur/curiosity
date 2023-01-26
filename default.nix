@@ -30,12 +30,14 @@ let
     run = import ./scripts/integration-tests {
       inherit nixpkgs binaries haddock content data scenarios;
     };
+    ci-tools = import ./ci { inherit nixpkgs; };
 in rec
   {
     # Build with nix-build -A <attr>
     # binaries + haddock are also available as binaries.all.
     inherit nixpkgs binaries content data indexes asciinema scenarios haddock run;
     inherit (run) run-vm-tests;
+    inherit ci-tools;
     public = (import ./content { inherit nixpkgs; }).html.public;
     static = (import "${sources.smart-design-hs}").static;
     man-pages = (import ./man { inherit nixpkgs; }).man-pages;
