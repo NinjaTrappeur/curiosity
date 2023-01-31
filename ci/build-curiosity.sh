@@ -38,7 +38,6 @@ for job in $(nix-eval-jobs "${args[@]}" | jq -r 'select(.isCached == false) | @b
     error=1
   else
     drvPath=$(echo "$job" | jq -r .drvPath)
-    drvName=$(echo "$job" | jq -r .name)
     if ! nix-store --realize "$drvPath" 2>&1 | tee build-log.txt; then
       log "### ❌ $attr"
       log
@@ -48,10 +47,8 @@ for job in $(nix-eval-jobs "${args[@]}" | jq -r 'select(.isCached == false) | @b
       error=1
     else
       log "### ✅ $attr"
-      echo "${drvName}=${drvPath}" >> "$GITHUB_OUTPUT"
     fi
     log
-    rm build-log.txt
   fi
 done
 
