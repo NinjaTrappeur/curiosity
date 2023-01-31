@@ -37,17 +37,35 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.B2_APPKEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APPKEY }}
       run: |
+        sudo cp ci/post-build-hook /etc/nix/real-post-build-hook
+        sudo chmod a+x /etc/nix/real-post-build-hook
+        # Setting up temporarily the real post build hook as
+        # post-build-hook to upload the queued-build-hook daemon to
+        # the cache.
+        sudo ln -s /etc/nix/real-post-build-hook /etc/nix/post-build-hook
         sudo mkdir -p /run/keys
         sudo bash -c "echo ${SIGNING_KEY} > /run/keys/nix-signing-key.private"
         sudo bash -c "echo ${AWS_ACCESS_KEY_ID} > /run/keys/AWS_ACCESS_KEY_ID"
         sudo bash -c "echo ${AWS_SECRET_ACCESS_KEY} > /run/keys/AWS_SECRET_ACCESS_KEY"
-        sudo cp .github/workflows/post-build-hook /etc/nix/post-build-hook
+        queued_build_hook_path="$(nix-build -A ci-tools.queue-to-post-build-hook-daemon)"/bin/queue-to-post-build-hook-daemon
+        # Let's replace the temporary post-build-hook with the queued-build-hook powered one.
+        sudo rm /etc/nix/post-build-hook
+        sudo cp "${queued_build_hook_path}" /etc/nix/post-build-hook
+        sudo chmod a+x /etc/nix/post-build-hook
 
     - name: Build Curiosity
       run: |
-        nix-build -A toplevel --show-trace
-        system_path=$(nix-build -A toplevel)
-        echo "SYSTEM_PATH=$system_path" > $GITHUB_OUTPUT
+        PATH="$(nix-build -A ci-tools.queued-build-hook)"/bin:"$(nix-build -A ci-tools.systemfd)"/bin:$PATH
+        # Starting the queued-build-hook-daemon.
+        systemfd -s unix::/tmp/queued-build-hook.sock -- queued-build-hook daemon -hook /etc/nix/real-post-build-hook &
+        # Waiting for the build-hook daemon to be ready to receive connections.
+        until [ -S /tmp/queued-build-hook.sock ]
+        do
+          sleep 1
+        done
+        $(nix-build -A ci-tools.build-curiosity)/bin/build-curiosity
+        # Waiting for the build-hook daemon to upload all the pending paths.
+        queued-build-hook wait -socket /tmp/queued-build-hook.sock
       id: build_curiosity
 
     - name: Setup NixOS deploy env
@@ -62,6 +80,5 @@ jobs:
     - name: Deploy closure to smartcoop.sh
       if: github.event_name == 'push' && github.ref_name == 'main'
       env:
-        PROFILE_PATH: ${{ steps.build_curiosity.outputs.SYSTEM_PATH }}
         NIX_SSHOPTS: "-o StrictHostKeyChecking=no -i ${{ steps.deploy_env.outputs.SSH_KEY_PATH }} -l root"
       run: ./scripts/deploy.sh
