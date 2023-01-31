@@ -10,5 +10,6 @@ import qualified Options.Applicative           as A
 
 
 --------------------------------------------------------------------------------
+
 main :: IO ExitCode
 main = A.execParser Command.parserInfoWithTarget >>= Run.run
